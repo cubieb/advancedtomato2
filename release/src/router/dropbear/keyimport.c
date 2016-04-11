@@ -193,7 +193,7 @@ out:
 static void base64_encode_fp(FILE * fp, unsigned char *data,
 		int datalen, int cpl)
 {
-    char out[100];
+	unsigned char out[100];
     int n;
 	unsigned long outlen;
 	int rawcpl;
@@ -445,7 +445,7 @@ static struct openssh_key *load_openssh_key(const char *filename)
 						ret->keyblob_size);
 			}
 			outlen = ret->keyblob_size - ret->keyblob_len;
-			if (base64_decode(buffer, len, 
+			if (base64_decode((const unsigned char *)buffer, len,
 						ret->keyblob + ret->keyblob_len, &outlen) != CRYPT_OK){
 				errmsg = "Error decoding base64";
 				goto error;
@@ -464,17 +464,16 @@ static struct openssh_key *load_openssh_key(const char *filename)
 		goto error;
 	}
 
-	memset(buffer, 0, sizeof(buffer));
+	m_burn(buffer, sizeof(buffer));
 	return ret;
 
 	error:
-	memset(buffer, 0, sizeof(buffer));
+	m_burn(buffer, sizeof(buffer));
 	if (ret) {
 		if (ret->keyblob) {
-			memset(ret->keyblob, 0, ret->keyblob_size);
+			m_burn(ret->keyblob, ret->keyblob_size);
 			m_free(ret->keyblob);
 		}
-		memset(&ret, 0, sizeof(ret));
 		m_free(ret);
 	}
 	if (fp) {
@@ -494,9 +493,8 @@ static int openssh_encrypted(const char *filename)
 	if (!key)
 		return 0;
 	ret = key->encrypted;
-	memset(key->keyblob, 0, key->keyblob_size);
+	m_burn(key->keyblob, key->keyblob_size);
 	m_free(key->keyblob);
-	memset(&key, 0, sizeof(key));
 	m_free(key);
 	return ret;
 }
@@ -509,7 +507,7 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 	int i, num_integers = 0;
 	sign_key *retval = NULL;
 	char *errmsg;
-	char *modptr = NULL;
+	unsigned char *modptr = NULL;
 	int modlen = -9999;
 	enum signkey_type type;
 
@@ -602,13 +600,18 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 	 */
 	blobbuf = buf_new(3000);
 
+#ifdef DROPBEAR_DSS
 	if (key->type == OSSH_DSA) {
 		buf_putstring(blobbuf, "ssh-dss", 7);
 		retkey->type = DROPBEAR_SIGNKEY_DSS;
-	} else if (key->type == OSSH_RSA) {
+	} 
+#endif
+#ifdef DROPBEAR_RSA
+	if (key->type == OSSH_RSA) {
 		buf_putstring(blobbuf, "ssh-rsa", 7);
 		retkey->type = DROPBEAR_SIGNKEY_RSA;
 	}
+#endif
 
 	for (i = 0; i < num_integers; i++) {
 		ret = ber_read_id_len(p, key->keyblob+key->keyblob_len-p,
@@ -622,7 +625,7 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 
 		if (i == 0) {
 			/* First integer is a version indicator */
-			int expected;
+			int expected = -1;
 			switch (key->type) {
 				case OSSH_RSA:
 				case OSSH_DSA:
@@ -643,12 +646,12 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 			 */
 			if (i == 1) {
 				/* Save the details for after we deal with number 2. */
-				modptr = (char *)p;
+				modptr = p;
 				modlen = len;
 			} else if (i >= 2 && i <= 5) {
-				buf_putstring(blobbuf, p, len);
+				buf_putstring(blobbuf, (const char*)p, len);
 				if (i == 2) {
-					buf_putstring(blobbuf, modptr, modlen);
+					buf_putstring(blobbuf, (const char*)modptr, modlen);
 				}
 			}
 		} else if (key->type == OSSH_DSA) {
@@ -656,7 +659,7 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 			 * OpenSSH key order is p, q, g, y, x,
 			 * we want the same.
 			 */
-			buf_putstring(blobbuf, p, len);
+			buf_putstring(blobbuf, (const char*)p, len);
 		}
 
 		/* Skip past the number. */
@@ -805,7 +808,7 @@ static sign_key *openssh_read(const char *filename, char * UNUSED(passphrase))
 	}
 	m_burn(key->keyblob, key->keyblob_size);
 	m_free(key->keyblob);
-	m_burn(key, sizeof(key));
+	m_burn(key, sizeof(*key));
 	m_free(key);
 	if (errmsg) {
 		fprintf(stderr, "Error: %s\n", errmsg);
@@ -821,7 +824,7 @@ static int openssh_write(const char *filename, sign_key *key,
 	unsigned char *outblob = NULL;
 	int outlen = -9999;
 	struct mpint_pos numbers[9];
-	int nnumbers = -1, pos, len, seqlen, i;
+	int nnumbers = -1, pos = 0, len = 0, seqlen, i;
 	char *header = NULL, *footer = NULL;
 	char zero[1];
 	int ret = 0;
@@ -831,7 +834,14 @@ static int openssh_write(const char *filename, sign_key *key,
 	mp_int dmp1, dmq1, iqmp, tmpval; /* for rsa */
 #endif
 
-	if (key->type == DROPBEAR_SIGNKEY_RSA || key->type == DROPBEAR_SIGNKEY_DSS)
+	if (
+#ifdef DROPBEAR_RSA
+			key->type == DROPBEAR_SIGNKEY_RSA ||
+#endif
+#ifdef DROPBEAR_DSS
+			key->type == DROPBEAR_SIGNKEY_DSS ||
+#endif
+			0)
 	{
 		/*
 		 * Fetch the key blobs.
@@ -1033,7 +1043,8 @@ static int openssh_write(const char *filename, sign_key *key,
 		int curve_oid_len = 0;
 		const void* curve_oid = NULL;
 		unsigned long pubkey_size = 2*curve_size+1;
-		unsigned int k_size;
+		int k_size;
+		int err = 0;
 
 		/* version. less than 10 bytes */
 		buf_incrwritepos(seq_buf,
@@ -1079,7 +1090,7 @@ static int openssh_write(const char *filename, sign_key *key,
 		buf_incrwritepos(seq_buf,
 			ber_write_id_len(buf_getwriteptr(seq_buf, 10), 3, 1+pubkey_size, 0));
 		buf_putbyte(seq_buf, 0);
-		int err = ecc_ansi_x963_export(*eck, buf_getwriteptr(seq_buf, pubkey_size), &pubkey_size);
+		err = ecc_ansi_x963_export(*eck, buf_getwriteptr(seq_buf, pubkey_size), &pubkey_size);
 		if (err != CRYPT_OK) {
 			dropbear_exit("ECC error");
 		}

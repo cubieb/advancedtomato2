@@ -1,5 +1,5 @@
-#ifndef _HAVE_LOGINREC_H_
-#define _HAVE_LOGINREC_H_
+#ifndef DROPBEAR_HAVE_LOGINREC_H_
+#define DROPBEAR_HAVE_LOGINREC_H_
 
 /*
  * Copyright (c) 2000 Andre Lucas.  All rights reserved.
@@ -79,10 +79,10 @@
 #  if defined(HAVE_UTMP_H) && defined(UTMP_FILE) && !defined(DISABLE_UTMP)
 #    define USE_UTMP
 #  endif
-#  if defined(HAVE_WTMPX_H) && defined(WTMPX_FILE) && !defined(DISABLE_WTMPX)
+#  if defined(WTMPX_FILE) && !defined(DISABLE_WTMPX)
 #    define USE_WTMPX
 #  endif
-#  if defined(HAVE_WTMP_H) && defined(WTMP_FILE) && !defined(DISABLE_WTMP)
+#  if defined(WTMP_FILE) && !defined(DISABLE_WTMP)
 #    define USE_WTMP
 #  endif
 
@@ -182,4 +182,4 @@ char *line_fullname(char *dst, const char *src, size_t dstsize);
 char *line_stripname(char *dst, const char *src, size_t dstsize);
 char *line_abbrevname(char *dst, const char *src, size_t dstsize);
 
-#endif /* _HAVE_LOGINREC_H_ */
+#endif /* DROPBEAR_HAVE_LOGINREC_H_ */

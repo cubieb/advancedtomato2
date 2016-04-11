@@ -22,8 +22,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE. */
 
-#ifndef _SESSION_H_
-#define _SESSION_H_
+#ifndef DROPBEAR_SESSION_H_
+#define DROPBEAR_SESSION_H_
 
 #include "includes.h"
 #include "options.h"
@@ -38,27 +38,32 @@
 #include "tcpfwd.h"
 #include "chansession.h"
 #include "dbutil.h"
+#include "netio.h"
 
 extern int sessinitdone; /* Is set to 0 somewhere */
 extern int exitflag;
 
 void common_session_init(int sock_in, int sock_out);
-void session_loop(void(*loophandler)());
+void session_loop(void(*loophandler)()) ATTRIB_NORETURN;
 void session_cleanup();
 void send_session_identification();
 void send_msg_ignore();
+void ignore_recv_response();
+
+void update_channel_prio();
 
 const char* get_user_shell();
 void fill_passwd(const char* username);
 
 /* Server */
-void svr_session(int sock, int childpipe);
+void svr_session(int sock, int childpipe) ATTRIB_NORETURN;
 void svr_dropbear_exit(int exitcode, const char* format, va_list param) ATTRIB_NORETURN;
 void svr_dropbear_log(int priority, const char* format, va_list param);
 
 /* Client */
-void cli_session(int sock_in, int sock_out);
-void cleantext(unsigned char* dirtytext);
+void cli_session(int sock_in, int sock_out, struct dropbear_progress_connection *progress) ATTRIB_NORETURN;
+void cli_connected(int result, int sock, void* userdata, const char *errstring);
+void cleantext(char* dirtytext);
 
 /* crypto parameters that are stored individually for transmit and receive */
 struct key_context_directional {
@@ -106,7 +111,8 @@ struct sshsession {
 
 	time_t connect_time; /* time the connection was established
 							(cleared after auth once we're not
-							respecting AUTH_TIMEOUT any more) */
+							respecting AUTH_TIMEOUT any more).
+							A monotonic time, not realworld */
 
 	int sock_in;
 	int sock_out;
@@ -114,7 +120,7 @@ struct sshsession {
 	/* remotehost will be initially NULL as we delay
 	 * reading the remote version string. it will be set
 	 * by the time any recv_() packet methods are called */
-	unsigned char *remoteident; 
+	char *remoteident;
 
 	int maxfd; /* the maximum file descriptor to check with select() */
 
@@ -124,8 +130,13 @@ struct sshsession {
 							 throughout the code, as handlers fill out this
 							 buffer with the packet to send. */
 	struct Queue writequeue; /* A queue of encrypted packets to send */
+	unsigned int writequeue_len; /* Number of bytes pending to send in writequeue */
 	buffer *readbuf; /* From the wire, decrypted in-place */
-	buffer *payload; /* Post-decompression, the actual SSH packet */
+	buffer *payload; /* Post-decompression, the actual SSH packet. 
+						May have extra data at the beginning, will be
+						passed to packet processing functions positioned past
+						that, see payload_beginning */
+	unsigned int payload_beginning;
 	unsigned int transseq, recvseq; /* Sequence IDs */
 
 	/* Packet-handling flags */
@@ -135,9 +146,8 @@ struct sshsession {
 	unsigned dataallowed : 1; /* whether we can send data packets or we are in
 								 the middle of a KEX or something */
 
-	unsigned char requirenext[2]; /* bytes indicating what packets we require next, 
-									 or 0x00 for any. Second option can only be
-									 used if the first byte is also set */
+	unsigned char requirenext; /* byte indicating what packets we require next, 
+									 or 0x00 for any.  */
 
 	unsigned char ignorenext; /* whether to ignore the next packet,
 								 used for kex_follows stuff */
@@ -146,12 +156,17 @@ struct sshsession {
 	
 	int signal_pipe[2]; /* stores endpoints of a self-pipe used for
 						   race-free signal handling */
-						
-	time_t last_trx_packet_time; /* time of the last packet transmission, for
-							keepalive purposes */
 
-	time_t last_packet_time; /* time of the last packet transmission or receive, for
-								idle timeout purposes */
+	m_list conn_pending;
+						
+	/* time of the last packet send/receive, for keepalive. Not real-world clock */
+	time_t last_packet_time_keepalive_sent;
+	time_t last_packet_time_keepalive_recv;
+	time_t last_packet_time_any_sent;
+
+	time_t last_packet_time_idle; /* time of the last packet transmission or receive, for
+								idle timeout purposes so ignores SSH_MSG_IGNORE
+								or responses to keepalives. Not real-world clock */
 
 
 	/* KEX/encryption related */
@@ -187,8 +202,11 @@ struct sshsession {
 	unsigned int chansize; /* the number of Channel*s allocated for channels */
 	unsigned int chancount; /* the number of Channel*s in use */
 	const struct ChanType **chantypes; /* The valid channel types */
+	int channel_signal_pending; /* Flag set by sigchld handler */
 
-	
+	/* TCP priority level for the main "port 22" tcp socket */
+	enum dropbear_prio socket_prio;
+
 	/* TCP forwarding - where manage listeners */
 	struct Listener ** listeners;
 	unsigned int listensize;
@@ -233,6 +251,7 @@ typedef enum {
 
 typedef enum {
 	STATE_NOTHING,
+	USERAUTH_WAIT,
 	USERAUTH_REQ_SENT,
 	USERAUTH_FAIL_RCVD,
 	USERAUTH_SUCCESS_RCVD,
@@ -267,16 +286,16 @@ struct clientsession {
 
 	int lastauthtype; /* either AUTH_TYPE_PUBKEY or AUTH_TYPE_PASSWORD,
 						 for the last type of auth we tried */
+	int ignore_next_auth_response;
 #ifdef ENABLE_CLI_INTERACT_AUTH
 	int auth_interact_failed; /* flag whether interactive auth can still
 								 be used */
 	int interact_request_received; /* flag whether we've received an 
 									  info request from the server for
 									  interactive auth.*/
-
+#endif
 	int cipher_none_after_auth; /* Set to 1 if the user requested "none"
 								   auth */
-#endif
 	sign_key *lastprivkey;
 
 	int retval; /* What the command exit status was - we emulate it */
@@ -298,4 +317,4 @@ extern struct serversession svr_ses;
 extern struct clientsession cli_ses;
 #endif /* DROPBEAR_CLIENT */
 
-#endif /* _SESSION_H_ */
+#endif /* DROPBEAR_SESSION_H_ */

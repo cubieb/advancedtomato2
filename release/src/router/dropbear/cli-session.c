@@ -37,13 +37,15 @@
 #include "chansession.h"
 #include "agentfwd.h"
 #include "crypto_desc.h"
+#include "netio.h"
 
-static void cli_remoteclosed();
+static void cli_remoteclosed() ATTRIB_NORETURN;
 static void cli_sessionloop();
 static void cli_session_init();
-static void cli_finished();
+static void cli_finished() ATTRIB_NORETURN;
 static void recv_msg_service_accept(void);
 static void cli_session_cleanup(void);
+static void recv_msg_global_request_cli(void);
 
 struct clientsession cli_ses; /* GLOBAL */
 
@@ -68,9 +70,16 @@ static const packettype cli_packettypes[] = {
 	{SSH_MSG_CHANNEL_OPEN_FAILURE, recv_msg_channel_open_failure},
 	{SSH_MSG_USERAUTH_BANNER, recv_msg_userauth_banner}, /* client */
 	{SSH_MSG_USERAUTH_SPECIFIC_60, recv_msg_userauth_specific_60}, /* client */
+	{SSH_MSG_GLOBAL_REQUEST, recv_msg_global_request_cli},
+	{SSH_MSG_CHANNEL_SUCCESS, ignore_recv_response},
+	{SSH_MSG_CHANNEL_FAILURE, ignore_recv_response},
 #ifdef  ENABLE_CLI_REMOTETCPFWD
 	{SSH_MSG_REQUEST_SUCCESS, cli_recv_msg_request_success}, /* client */
 	{SSH_MSG_REQUEST_FAILURE, cli_recv_msg_request_failure}, /* client */
+#else
+	/* For keepalive */
+	{SSH_MSG_REQUEST_SUCCESS, ignore_recv_response},
+	{SSH_MSG_REQUEST_FAILURE, ignore_recv_response},
 #endif
 	{0, 0} /* End */
 };
@@ -85,20 +94,37 @@ static const struct ChanType *cli_chantypes[] = {
 	NULL /* Null termination */
 };
 
-void cli_session(int sock_in, int sock_out) {
+void cli_connected(int result, int sock, void* userdata, const char *errstring)
+{
+	struct sshsession *myses = userdata;
+	if (result == DROPBEAR_FAILURE) {
+		dropbear_exit("Connect failed: %s", errstring);
+	}
+	myses->sock_in = myses->sock_out = sock;
+	update_channel_prio();
+}
+
+void cli_session(int sock_in, int sock_out, struct dropbear_progress_connection *progress) {
 
 	common_session_init(sock_in, sock_out);
+
+	if (progress) {
+		connect_set_writequeue(progress, &ses.writequeue);
+	}
 
 	chaninitialise(cli_chantypes);
 
 	/* Set up cli_ses vars */
 	cli_session_init();
 
+
 	/* Ready to go */
 	sessinitdone = 1;
 
 	/* Exchange identification */
 	send_session_identification();
+
+	kexfirstinitialise(); /* initialise the kex state */
 
 	send_msg_kexinit();
 
@@ -228,6 +254,10 @@ static void cli_sessionloop() {
 			cli_ses.state = USERAUTH_REQ_SENT;
 			TRACE(("leave cli_sessionloop: sent userauth methods req"))
 			return;
+
+		case USERAUTH_REQ_SENT:
+			TRACE(("leave cli_sessionloop: waiting, req_sent"))
+			return;
 			
 		case USERAUTH_FAIL_RCVD:
 			if (cli_auth_try() == DROPBEAR_FAILURE) {
@@ -344,10 +374,10 @@ static void cli_remoteclosed() {
 /* Operates in-place turning dirty (untrusted potentially containing control
  * characters) text into clean text. 
  * Note: this is safe only with ascii - other charsets could have problems. */
-void cleantext(unsigned char* dirtytext) {
+void cleantext(char* dirtytext) {
 
 	unsigned int i, j;
-	unsigned char c;
+	char c;
 
 	j = 0;
 	for (i = 0; dirtytext[i] != '\0'; i++) {
@@ -361,4 +391,10 @@ void cleantext(unsigned char* dirtytext) {
 	}
 	/* Null terminate */
 	dirtytext[j] = '\0';
+}
+
+static void recv_msg_global_request_cli(void) {
+	TRACE(("recv_msg_global_request_cli"))
+	/* Send a proper rejection */
+	send_msg_request_failure();
 }

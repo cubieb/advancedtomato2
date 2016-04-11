@@ -58,6 +58,10 @@ static const packettype svr_packettypes[] = {
 	{SSH_MSG_CHANNEL_OPEN, recv_msg_channel_open},
 	{SSH_MSG_CHANNEL_EOF, recv_msg_channel_eof},
 	{SSH_MSG_CHANNEL_CLOSE, recv_msg_channel_close},
+	{SSH_MSG_CHANNEL_SUCCESS, ignore_recv_response},
+	{SSH_MSG_CHANNEL_FAILURE, ignore_recv_response},
+	{SSH_MSG_REQUEST_FAILURE, ignore_recv_response}, /* for keepalive */
+	{SSH_MSG_REQUEST_SUCCESS, ignore_recv_response}, /* client */
 #ifdef USING_LISTENERS
 	{SSH_MSG_CHANNEL_OPEN_CONFIRMATION, recv_msg_channel_open_confirmation},
 	{SSH_MSG_CHANNEL_OPEN_FAILURE, recv_msg_channel_open_failure},
@@ -74,10 +78,14 @@ static const struct ChanType *svr_chantypes[] = {
 };
 
 static void
-svr_session_cleanup(void)
-{
+svr_session_cleanup(void) {
 	/* free potential public key options */
 	svr_pubkey_options_cleanup();
+
+	m_free(svr_ses.addrstring);
+	m_free(svr_ses.remotehost);
+	m_free(svr_ses.childpids);
+	svr_ses.childpidsize = 0;
 }
 
 void svr_session(int sock, int childpipe) {
@@ -94,8 +102,6 @@ void svr_session(int sock, int childpipe) {
 	svr_authinitialise();
 	chaninitialise(svr_chantypes);
 	svr_chansessinitialise();
-
-	ses.connect_time = time(NULL);
 
 	/* for logging the remote address */
 	get_socket_address(ses.sock_in, NULL, NULL, &host, &port, 0);
@@ -122,6 +128,8 @@ void svr_session(int sock, int childpipe) {
 
 	/* exchange identification, version etc */
 	send_session_identification();
+	
+	kexfirstinitialise(); /* initialise the kex state */
 
 	/* start off with key exchange */
 	send_msg_kexinit();
@@ -138,6 +146,7 @@ void svr_session(int sock, int childpipe) {
 void svr_dropbear_exit(int exitcode, const char* format, va_list param) {
 
 	char fmtbuf[300];
+	int i;
 
 	if (!sessinitdone) {
 		/* before session init */
@@ -169,6 +178,15 @@ void svr_dropbear_exit(int exitcode, const char* format, va_list param) {
 	{
 		/* must be after we've done with username etc */
 		session_cleanup();
+	}
+
+	if (svr_opts.hostkey) {
+		sign_key_free(svr_opts.hostkey);
+		svr_opts.hostkey = NULL;
+	}
+	for (i = 0; i < DROPBEAR_MAX_PORTS; i++) {
+		m_free(svr_opts.addresses[i]);
+		m_free(svr_opts.ports[i]);
 	}
 
 	exit(exitcode);

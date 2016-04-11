@@ -51,7 +51,7 @@
 				</form>
 				<p>
 					<!-- BBT-BEGIN -->
-					- Transmission 2.81 integration<br>
+					- Transmission 2.92 integration<br>
 					<!-- BBT-END -->
 					<!-- BT-BEGIN -->
 					- GUI for Transmission<br>
@@ -65,6 +65,7 @@
 					<!-- USB-BEGIN -->
 					- 3G Modem support (big thanks for @LDevil)<br>
 					<!-- USB-END -->
+					- MutliWAN feature (written by @Arctic, modified by @Shibby)<br>
 					<!-- LINUX26-END -->
 					<!-- SNMP-BEGIN -->
 					- SNMP integration and GUI<br>
@@ -78,6 +79,9 @@
 					<!-- TOR-BEGIN -->
 					- TOR Project integration and GUI<br>
 					<!-- TOR-END -->
+					<!-- OPENVPN-BEGIN -->
+					- OpenVPN: Routing Policy<br>
+					<!-- OPENVPN-END -->
 					- TomatoAnon project integration and GUI<br>
 					- TomatoThemeBase project integration and GUI<br>
 					- Ethernet Ports State<br>
@@ -154,7 +158,7 @@
 					<!-- DNSCRYPT-BEGIN -->
 					- DNSCrypt-Proxy selectable/manual resolver<br>
 					<!-- DNSCRYPT-END -->
-					- Comcast DSCP Fix GUI
+					- Comcast DSCP Fix GUI<br>
 					<!-- TINC-BEGIN -->
 					- Tinc Daemon integration and GUI<br>
 					<!-- TINC-END -->

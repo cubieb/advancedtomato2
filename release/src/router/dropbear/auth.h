@@ -22,8 +22,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE. */
 
-#ifndef _AUTH_H_
-#define _AUTH_H_
+#ifndef DROPBEAR_AUTH_H_
+#define DROPBEAR_AUTH_H_
 
 #include "includes.h"
 #include "signkey.h"
@@ -106,7 +106,7 @@ struct AuthState {
 								valid */
 	unsigned int failcount; /* Number of (failed) authentication attempts.*/
 	unsigned authdone : 1; /* 0 if we haven't authed, 1 if we have. Applies for
-							  client and server (though has differing [obvious]
+							  client and server (though has differing 
 							  meanings). */
 	unsigned perm_warn : 1; /* Server only, set if bad permissions on 
 							   ~/.ssh/authorized_keys have already been
@@ -133,8 +133,8 @@ struct PubKeyOptions {
 	int no_x11_forwarding_flag;
 	int no_pty_flag;
 	/* "command=" option. */
-	unsigned char * forced_command;
+	char * forced_command;
 };
 #endif
 
-#endif /* _AUTH_H_ */
+#endif /* DROPBEAR_AUTH_H_ */
